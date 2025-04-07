@@ -2,9 +2,19 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
+from database import  get_db
+from sqlalchemy.orm import Session
+from schema import User as UserSchema
+from fastapi import Depends
 import httpx
 import os
 from urllib.parse import urlencode
+from database import engine, Base
+from models import User  # Importar todos los modelos
+
+# Crear todas las tablas
+Base.metadata.create_all(bind=engine)
 load_dotenv()
 app = FastAPI()
 CLIENT_ID =  os.getenv("CLIENT_ID")
@@ -12,12 +22,32 @@ CLIENT_ID =  os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 # Configuración desde variables de entorno
 
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite todos los orígenes (¡cambiar en producción!)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc)
+    allow_headers=["*"],  # Permite todos los headers
+)
 # Configuración
 REDIRECT_URI = "http://localhost:8000/callback"
 
 # Almacenamiento temporal (solo para pruebas)
 tokens = {}
+async def find_spotify_user(token:str):
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        devices_url = "https://api.spotify.com/v1/me/"
+        response = await client.get(devices_url, headers=headers)
+        print(response.json())
+        print(response.headers)
+        return response.json()
+    
+def create_user(user:UserSchema,db:Session =Depends(get_db)):
+    
+    db.add(UserModel(**user.dict()))
+    db.commit()
+    return user
 
 @app.get("/login")
 async def login():
@@ -26,12 +56,12 @@ async def login():
         "response_type": "code",
         "redirect_uri": REDIRECT_URI,
         "scope": "user-modify-playback-state user-read-playback-state",
+        "state": "1234567890"
     }
     auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
     return RedirectResponse(auth_url)
-
 @app.get("/callback")
-async def callback(code: str):
+async def callback(code: str,state:str):
 
 
     async with httpx.AsyncClient() as client:
@@ -49,8 +79,13 @@ async def callback(code: str):
     if response.status_code != 200:
         raise HTTPException(status_code=400, detail="Error de autenticación")
     print(response.json()["access_token"])
-    tokens["access_token"] = response.json()["access_token"]
-    return {"status": "¡Autenticación exitosa! Token almacenado en memoria."}
+    user = UserSchema()    
+    tokens["user"]["access_token"] = response.json()["access_token"]
+    create_user(UserSchema(username="user", token=response.json()["access_token"]))
+    response =RedirectResponse("http://localhost:3000/")
+    response.set_cookie("access_token", response.json()["access_token"])
+    #return {"status": "¡Autenticación exitosa! Token almacenado en memoria."}
+    return response
 @app.put("/stop")
 async def stop_song(track_name: str,artist:str):
     if not tokens.get("access_token"):
