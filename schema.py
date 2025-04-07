@@ -14,8 +14,8 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     token:str
-    id: int
-    is_active: bool
+    id: int = None
+    is_active: bool = True
     # rol:List[Rol]=[]
     class Config:
         from_attributes = True

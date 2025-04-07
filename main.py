@@ -11,10 +11,10 @@ import httpx
 import os
 from urllib.parse import urlencode
 from database import engine, Base
-from models import User  # Importar todos los modelos
+from models import User as UserModel  # Importar todos los modelos
 
-# Crear todas las tablas
-Base.metadata.create_all(bind=engine)
+# # Crear todas las tablas
+# Base.metadata.create_all(bind=engine)
 load_dotenv()
 app = FastAPI()
 CLIENT_ID =  os.getenv("CLIENT_ID")
@@ -43,9 +43,9 @@ async def find_spotify_user(token:str):
         print(response.headers)
         return response.json()
     
-def create_user(user:UserSchema,db:Session =Depends(get_db)):
+def create_user(user:UserSchema,db:Session):
     
-    db.add(UserModel(**user.dict()))
+    db.add(UserModel(**user.model_dump()))
     db.commit()
     return user
 
@@ -61,8 +61,8 @@ async def login():
     auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
     return RedirectResponse(auth_url)
 @app.get("/callback")
-async def callback(code: str,state:str):
-
+async def callback(code: str,state:str,db:Session =Depends(get_db)):
+    print("entree")
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -79,13 +79,16 @@ async def callback(code: str,state:str):
     if response.status_code != 200:
         raise HTTPException(status_code=400, detail="Error de autenticación")
     print(response.json()["access_token"])
-    user = UserSchema()    
-    tokens["user"]["access_token"] = response.json()["access_token"]
-    create_user(UserSchema(username="user", token=response.json()["access_token"]))
-    response =RedirectResponse("http://localhost:3000/")
-    response.set_cookie("access_token", response.json()["access_token"])
+    user = UserSchema(username="user", token=response.json()["access_token"])
+    # tokens["user"]["access_token"] = response.json()["access_token"]
+    db_user=create_user(user,db)
+    print(db_user)
+    return db_user
+    # response =RedirectResponse("http://localhost:3000/")
+    # response.set_cookie("access_token", response.json()["access_token"])
     #return {"status": "¡Autenticación exitosa! Token almacenado en memoria."}
-    return response
+    # return response
+    
 @app.put("/stop")
 async def stop_song(track_name: str,artist:str):
     if not tokens.get("access_token"):
@@ -176,13 +179,7 @@ async def play_song(track_name: str,artist:str):
         raise HTTPException(status_code=400, detail="Error al reproducir. ¿El dispositivo está activo?")
     
     return {"status": "¡Reproduciendo!", "track_uri": track_uri}
-# from fastapi import FastAPI
-# # from fastapi.encoders import jsonable_encoder
-# import requests
-# app = FastAPI()
-# CLIENT_ID =  'b592b4bfc0394c5aaaf2fc453ba9a462'
 
-# CLIENT_SECRET = '5471d9bd1bd1430aa096100afc2e75bb'
 
 # # Obtener token
 # auth_url = 'https://accounts.spotify.com/api/token'
