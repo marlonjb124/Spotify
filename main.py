@@ -1,22 +1,23 @@
 # main.py
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse
+from dotenv import load_dotenv
 import httpx
 import os
 from urllib.parse import urlencode
-
+load_dotenv()
 app = FastAPI()
+CLIENT_ID =  os.getenv("CLIENT_ID")
 
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 # Configuración desde variables de entorno
-CLIENT_ID =  'b592b4bfc0394c5aaaf2fc453ba9a462'
 
-CLIENT_SECRET = '5471d9bd1bd1430aa096100afc2e75bb'
 
 # Configuración
 REDIRECT_URI = "http://localhost:8000/callback"
 
 # Almacenamiento temporal (solo para pruebas)
-tokens = {"access_token":"BQCENXwu0ut4-UToERq2zyAZJy96R4dFmkhHASS2oZHleUcvIQeS06kNgXkF-ul6V5p_kzl8RR7xwXHHPwBMNj6Hhry2MGh-XlvLilnaClmS40i3lTaosUUXbnA4g6A2XN3LbAMYhVn4E82-YhRPAzuohEiCWH7kgb7P6y67TtpskaHagbza5X5RxDr00KdEPeHa_BpodrnpJ9OGeyl3xHF3DIUgcDJy44OfPvXNY40O18lMmqw"}
+tokens = {}
 
 @app.get("/login")
 async def login():
