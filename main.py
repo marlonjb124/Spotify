@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, Request, UploadFile, File, HTTPException
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException,Header
 from typing import Annotated
 from fastapi.responses import RedirectResponse,StreamingResponse,JSONResponse
 from dotenv import load_dotenv
@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.security import 
 from database import  get_db
 from sqlalchemy.orm import Session
-from schema import User as UserSchema
 from fastapi import Depends
+import json
 import httpx
 import asyncio
 import os
@@ -19,16 +19,25 @@ import cloudinary.uploader
 from urllib.parse import urlencode
 from database import engine, Base
 from models import User as UserModel  # Importar todos los modelos
-
+from router_api import get_data_from_image
+from spotify_api import find_spotify
 # # Crear todas las tablas
 # Base.metadata.create_all(bind=engine)
 load_dotenv()
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite todos los orígenes (¡cambiar en producción!)
+    allow_credentials=True,
+    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc)
+    allow_headers=["*"],  # Permite todos los headers
+)
 CLIENT_ID =  os.getenv("CLIENT_ID")
-SPOTIFY_API_URL = "https://api.spotify.com/v1/search"
+
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 GEMMA_API_KEY_CESAR=os.getenv("GEMMA_API_KEY_CESAR")
 GEMMA_API_KEY_MARLON=os.getenv("GEMMA_API_KEY_MARLON")
+REDIRECT_URI = "http://localhost:8000/callback"
 # Configuración desde variables de entorno
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
@@ -39,11 +48,13 @@ cloudinary.config(
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 MAX_FILE_SIZE = 20 * 1024 * 1024 
+
 def allowed_file(filename: str) -> bool:
     return "." in filename and \
            filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-@app.post("/upload")
-async def process_image_route_upload(file: Annotated[UploadFile, File()]):
+           
+# @app.post("/upload")
+async def upload_image(file: Annotated[UploadFile, File()]):
     # Validar archivo
     if not allowed_file(file.filename):
         raise HTTPException(
@@ -83,103 +94,16 @@ async def process_image_route_upload(file: Annotated[UploadFile, File()]):
     finally:
         await file.close()
 
-# Crear directorio si no existe
-# os.makedirs(PUBLIC_DIR, exist_ok=True)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Permite todos los orígenes (¡cambiar en producción!)
-    allow_credentials=True,
-    allow_methods=["*"],  # Permite todos los métodos (GET, POST, etc)
-    allow_headers=["*"],  # Permite todos los headers
-)
-# Configuración
-REDIRECT_URI = "http://localhost:8000/callback"
-
-# Almacenamiento temporal (solo para pruebas)
-tokens = {}
-async def process_image(session, image_url,key, spotify_token):
-    try:
-        # 1. Enviar imagen al modelo AI
-        async with session.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-              headers={
-    "Authorization": f"Bearer {key}",
-    "Content-Type": "application/json" # Optional. Site URL for rankings on openrouter.ai # Optional. Site title for rankings on openrouter.ai.
-  },
-            json={
-    "model": "google/gemma-3-27b-it:free",
-    "messages": [
-      {
-        "role": "user",
-        "content": [
-          {
-            "type": "text",
-            "text": "Necesito que me devuelvas una estructura json siempre igual que: {\"track\": \"track_name\", \"artist\": \"artist_name\"}"
-          },
-          {
-            "type": "image_url",
-            "image_url": {
-              "url": f"public/{image_url}"
-            }
-          }
-        ]
-      }
-    ],
-    
-  }
-        ) as response:
-            ai_response = await response.json()
-            if response.status != 200:
-                raise Exception(f"Error en modelo {model_name}: {ai_response}")
-        print(ai_response)
-        # 2. Procesar respuesta del AI
-        # track_info = extract_track_info(ai_response)  # Implementar esta función según el formato de respuesta
-        
-        # 3. Buscar en Spotify
-        async with session.get(
-            SPOTIFY_API_URL,
-            headers={"Authorization": f"Bearer {spotify_token}"},
-            params={
-                "q": f"{ai_response['track']} {ai_response['artist']}",
-                "type": "track",
-                "limit": 1
-            }
-        ) as spotify_response:
-            spotify_data = await spotify_response.json()
-            if spotify_response.status != 200:
-                raise Exception(f"Error en Spotify: {spotify_data}")
-            
-            # return format_response(spotify_data)  
-            # Formatear según necesidades
-            return spotify_data
-
-    except Exception as e:
-        logging.error(f"Error procesando imagen: {str(e)}")
-        return {"error": str(e)}
-
 async def image_processing_generator(images, spotify_token):
     async with aiohttp.ClientSession() as session:
-        tasks = [process_image(session, img_data, spotify_token) 
+        tasks = [process_image_route(session, img_data, spotify_token) 
                 for img_data in images]
         
         # Procesar las tareas conforme se completan
         for future in asyncio.as_completed(tasks):
             result = await future
             yield f"data: {json.dumps(result)}\n\n"
-async def find_spotify_user(token:str):
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient() as client:
-        devices_url = "https://api.spotify.com/v1/me/"
-        response = await client.get(devices_url, headers=headers)
-        print(response.json())
-        print(response.headers)
-        return response.json()
-    
-def create_user(user:UserSchema,db:Session):
-    
-    db.add(UserModel(**user.model_dump()))
-    db.commit()
-    return user
+
 
 @app.get("/login")
 async def login():
@@ -223,162 +147,65 @@ async def callback(code: str,db:Session =Depends(get_db)):
     # return response
     
 
-
-    
 @app.post("/get-track-info")
-async def process_image_route(file: Annotated[UploadFile, File()]):
-    dict_file = await process_image_route_upload(file)
+async def process_image_route(
+    file: Annotated[UploadFile, File()],
+    spotify_token: str = None,
+    model_api_key: str = None
+):
+    dict_file = await upload_image(file)
     
+    # Crear sesión manualmente (sin async with)
+    session = aiohttp.ClientSession()
     try:
-        async with aiohttp.ClientSession() as session:
-        # 1. Enviar imagen al modelo AI
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-        "Authorization": f"Bearer {GEMMA_API_KEY_MARLON}",
-        "Content-Type": "application/json"
-    },
-                json={
-        "model": "google/gemma-3-27b-it:free",
-        "messages": [
-        {
-            "role": "user",
-            "content": [
-            {
-                "type": "text",
-                "text": "Necesito que me extraigas de la imagen los artistas,album,canciones y me lo devuelvas en una estructura json siempre igual que: {\"track\": \"track_name\", \"artist\": \"artist_name\", \"album\": \"album_name\}"
-            },
-            {
-                "type": "image_url",
-                "image_url": {
-                "url": f"{dict_file['url']}"
-                }
-            }
-            ]
-        }
-        ],
-    
-  }
-        ) as response:
-                ai_response = await response.json()
-                if response.status != 200:
-                    raise Exception(f"Error en modelo {model_name}: {ai_response}")
-                print(ai_response)
-                return ai_response
+        model_response = await get_data_from_image(
+            session,
+            dict_file['url'], 
+            model_api_key or GEMMA_API_KEY_MARLON
+        )
+        
+        content = model_response["choices"][0]["message"]["content"]
+        json_data = content.split("```json")[1].split("```")[0].strip()
+        tracks_data = json.loads(json_data)
+
+        async def generate_results():
+            try:
+                tasks = [
+                    asyncio.create_task(
+                        find_spotify(session, spotify_token, song)
+                    ) for song in tracks_data
+                ]
+                
+                for future in asyncio.as_completed(tasks):
+                    try:
+                        result = await future
+                        yield f"data: {json.dumps(result)}\n\n"
+                    except Exception as e:
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                await session.close()  # Cerrar sesión cuando termine el generador
+                
+            yield "event: end\ndata: stream-completed\n\n"
+
+        return StreamingResponse(generate_results(), media_type="text/event-stream")
+
+    except json.JSONDecodeError:
+        await session.close()
+        raise HTTPException(400, "Formato de respuesta inválido")
+    except Exception as e:
+        await session.close()
+        raise HTTPException(500, f"Error interno: {str(e)}")
+            # aqui iria la limpieza de la respeusta del modelo para pasarle como parametro a find_spotify
+            # spotify_response = await find_spotify(session, spotify_token, data)
+            # return spotify_response
         # 2. Procesar respuesta del AI
         # track_info = extract_track_info(ai_response)  # Implementar esta función según el formato de respuesta
         
     #     # 3. Buscar en Spotify
-    #         async with session.get(
-    #             SPOTIFY_API_URL,
-    #             headers={"Authorization": f"Bearer {spotify_token}"},
-    #             params={
-    #                 "q": f"{ai_response['track']} {ai_response['artist']}",
-    #                 "type": "track",
-    #                 "limit": 1
-    #             }
-    #         ) as spotify_response:
-    #             spotify_data = await spotify_response.json()
-    #             if spotify_response.status != 200:
-    #                 raise Exception(f"Error en Spotify: {spotify_data}")
-                
-    #             # return format_response(spotify_data)  
-    #             # Formatear según necesidades
-    #             return spotify_data
+    #         
+    
+    
 
-    except Exception as e:
-        logging.error(f"Error procesando imagen: {str(e)}")
-        return {"error": str(e)} 
-@app.put("/stop")
-async def stop_song():
-    # if not tokens.get("access_token"):
-    #     raise HTTPException(status_code=401, detail="No autenticado. Ve a /login primero.")
-    
-    # headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    
-    # Buscar la canción
-    # async with httpx.AsyncClient() as client:
-    #     search_url = "https://api.spotify.com/v1/search"
-    #     params = {"q": track_name +" "+ artist, "type": "track", "limit": 1}
-    #     response = await client.get(search_url, headers=headers, params=params)
-    
-    # if not response.json().get("tracks", {}).get("items"):
-    #     raise HTTPException(status_code=404, detail="Canción no encontrada")
-    
-    # track_uri = response.json()["tracks"]["items"][0]["uri"]
-    
-    # Obtener dispositivo activo
-    # async with httpx.AsyncClient() as client:
-    #     devices_url = "https://api.spotify.com/v1/me/player/devices"
-    #     response = await client.get(devices_url, headers=headers)
-    #     print(response.json())
-    #     print(response.headers)
-    
-    # devices = response.json().get("devices", [])
-
-    # if not devices:
-    #     raise HTTPException(status_code=400, detail="Activa un dispositivo en Spotify primero (ej: app móvil o web).")
-    
-    # device_id = devices[0]["id"]
-    
-    # Reproducir
-    play_url = f"https://api.spotify.com/v1/me/player/pause?device_id=01f57fb8045a8e484c44192a94e8527ed811a87d"
-
-
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.put(play_url, headers=headers)
-        # print(response.json())
-    
-    if response.status_code != 204:
-        raise HTTPException(status_code=400, detail="Error al pausar. ¿El dispositivo está activo?")
-    
-    return {"status": "¡Reproduciendo!", "track_uri": track_uri}
-@app.put("/play")
-async def play_song(track_name: str,artist:str,):
-    # if not tokens.get("access_token"):
-    #     raise HTTPException(status_code=401, detail="No autenticado. Ve a /login primero.")
-    
-    headers = {"Authorization": "Bearer BQDGQVwuh5AaHl-zsn4k32Bj1noD6p65XFPriSrvK-f2OopBxcC5LzqXT3Wb9GcUTbmoWoQ9T6yHV2uG09pr1ldXvSmyWqif-4XTlao0knrZSxnAXAE2_Ub4k9dlFPYsxVroNEO7nKyg15UdADzgCYaSXVTBN2XdCC5ay_XvHQtp0d0vdnkLexZeuPsTp5dz1yJ8AqbYmJP2r2QXAiO79Zqhd-JWUMytKXC29libvzJK_9xr9Hc"}
-    
-    # Buscar la canción
-    async with httpx.AsyncClient() as client:
-        search_url = "https://api.spotify.com/v1/search"
-        params = {"q": track_name +" "+ artist, "type": "track", "limit": 1}
-        response = await client.get(search_url, headers=headers, params=params)
-        print(response.json())
-    if not response.json().get("tracks", {}).get("items"):
-        raise HTTPException(status_code=404, detail="Canción no encontrada")
-    
-    track_uri = response.json()["tracks"]["items"][0]["uri"]
-    
-    # Obtener dispositivo activo
-    # async with httpx.AsyncClient() as client:
-    #     devices_url = "https://api.spotify.com/v1/me/player/devices"
-    #     response = await client.get(devices_url, headers=headers)
-    #     print(response.json())
-    #     print(response.headers)
-    
-    # devices = response.json().get("devices", [])
-
-    # if not devices:
-    #     raise HTTPException(status_code=400, detail="Activa un dispositivo en Spotify primero (ej: app móvil o web).")
-    
-    # device_id = devices[0]["id"]
-    
-    # Reproducir
-    play_url = f"https://api.spotify.com/v1/me/player/play"
-    data = {"uris": [track_uri],"position_ms":100
-}
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.put(play_url, headers=headers, json=data)
-
-    
-    if response.status_code != 204:
-        raise HTTPException(status_code=400, detail="Error al reproducir. ¿El dispositivo está activo?")
-    
-    return {"status": "¡Reproduciendo!", "track_uri": track_uri}
 
 
 
