@@ -2,6 +2,7 @@
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException,Header
 from typing import Annotated,Generator, TypeVar, List,AsyncGenerator
 from fastapi.responses import RedirectResponse,StreamingResponse,JSONResponse
+from fastapi.encoders import jsonable_encoder
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.security import 
@@ -40,7 +41,8 @@ GEMMA_API_KEY_CESAR=os.getenv("GEMMA_API_KEY_CESAR")
 GEMMA_API_KEY_MARLON=os.getenv("GEMMA_API_KEY_MARLON")
 GEMMA_API_KEY_MARLON_2=os.getenv("GEMMA_API_KEY_MARLON_2")
 GEMMA_API_KEY_CESAR_2=os.getenv("GEMMA_API_KEY_CESAR_2")
-OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_CESAR,GEMMA_API_KEY_MARLON,GEMMA_API_KEY_MARLON_2,GEMMA_API_KEY_CESAR_2]
+GEMMA_API_KEY_MARLON_3=os.getenv("GEMMA_API_KEY_MARLON_3")
+OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_MARLON_3]
 REDIRECT_URI = "http://localhost:8000/callback"
 # Configuración desde variables de entorno
 cloudinary.config(
@@ -170,6 +172,7 @@ async def process_image_route(
     session = aiohttp.ClientSession()
     try:
         key= next(generador_ciclico(OPEN_ROUTER_API_KEYS))
+        print(key)
         model_response = await get_data_from_image(
             session,
             dict_file['url'], 
@@ -179,6 +182,8 @@ async def process_image_route(
         content = model_response["choices"][0]["message"]["content"]
         json_data = content.split("```json")[1].split("```")[0].strip()
         tracks_data = json.loads(json_data)
+        # null_album = [song for song in tracks_data if "null" in song["album"]]
+        # assign_album =[song["album"] for song in null_album]
 
         async def generate_results():
             try:
@@ -197,8 +202,8 @@ async def process_image_route(
                         simplified_data = transform_spotify_response(result)
                         print(simplified_data)
                         dict_object= simplified_data.model_dump()
-                        print(type(dict_object))
-                        yield f"data: {dict_object}\n\n"
+                        jsonable= jsonable_encoder(dict_object)
+                        yield f"data: {json.dumps(jsonable)}\n\n"
                     except Exception as e:
                         yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
@@ -224,6 +229,8 @@ async def Images_Spotifind_mine(
     # Subir todas las imágenes a Cloudinary concurrentemente
     upload_tasks = [upload_image(file) for file in files]
     cloudinary_results = await asyncio.gather(*upload_tasks)
+    print("imagenes cantida")
+    print(len(cloudinary_results))
     
     # Crear una sesión HTTP compartida
     session = aiohttp.ClientSession()
@@ -232,26 +239,50 @@ async def Images_Spotifind_mine(
         """Procesa una imagen individual y devuelve sus tracks"""
         try:
             # Obtener datos de la imagen usando OpenRouter
-            api_key = next(generador_ciclico(OPEN_ROUTER_API_KEYS)) or GEMMA_API_KEY_CESAR
+            api_key = next(generador_ciclico(OPEN_ROUTER_API_KEYS))
             model_response = await get_data_from_image(session, image_result['url'], api_key)
             
             # Extraer el JSON de la respuesta
             content = model_response["choices"][0]["message"]["content"]
-            json_data = content.split("```json")[1].split("```")[0].strip()
-            tracks_data = json.loads(json_data)
             
-            # Buscar cada track en Spotify concurrentemente
-            spotify_tasks = [
-                find_spotify(session, spotify_token, song)
-                for song in tracks_data
-            ]
+            # Si la respuesta es simplemente "Null", retornar lista vacía
+            if content.strip() == "Null":
+                return []
+                
+            # Extraer JSON con manejo de errores mejorado
+            try:
+                # Intentar extraer JSON usando el formato estándar
+                json_parts = content.split("```json")
+                if len(json_parts) > 1:
+                    json_text = json_parts[1].split("```")[0].strip()
+                else:
+                    # Intentar extraer JSON sin el markdown
+                    json_text = content.split("[")[1].rsplit("]", 1)[0]
+                    json_text = "[" + json_text + "]"
+                    
+                # Corregir valores Null sin comillas que causan el error JSON
+                json_text = json_text.replace(': Null', ': null').replace(':Null', ':null')
+                
+                tracks_data = json.loads(json_text)
+                print("cuantas canciones responde la IA de la imagen")
+                print(len(tracks_data))
+                
+                # Buscar cada track en Spotify concurrentemente
+                spotify_tasks = [
+                    find_spotify(session, spotify_token, song)
+                    for song in tracks_data
+                ]
+                
+                # Usar asyncio.gather para mejor rendimiento
+                spotify_results = await asyncio.gather(*spotify_tasks)
             
-            spotify_results = await asyncio.gather(*spotify_tasks)
-  
-            
-            # Transformar los resultados
-            return [transform_spotify_response(result).model_dump() for result in spotify_results]
-            
+                # Transformar los resultados
+                return [transform_spotify_response(result).model_dump() for result in spotify_results]
+                
+            except (json.JSONDecodeError, IndexError) as e:
+                print(f"Error procesando JSON: {e}, contenido: {content[:200]}...")
+                return []
+                
         except Exception as e:
             print(f"Error procesando imagen: {e}")
             return []
@@ -260,10 +291,16 @@ async def Images_Spotifind_mine(
         """Genera el stream de eventos SSE"""
         try:
             # Procesar todas las imágenes concurrentemente
+            # esto es un arreglo de tamano de la cantidad de fotos con arreglosd e canciones
             processing_tasks = [process_image(result) for result in cloudinary_results]
-            
+            print(" procesadas per foto")
+            print(len(processing_tasks))
+
             # A medida que cada imagen se procesa, enviar sus tracks
             for future in asyncio.as_completed(processing_tasks):
+                print("entrando")
+                print(processing_tasks[0])
+                print(processing_tasks[1])
                 tracks = await future
                 for track in tracks:
                     yield f"data: {json.dumps(track)}\n\n"

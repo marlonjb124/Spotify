@@ -33,7 +33,7 @@ async def play_song(track_name: str,artist:str,):
         search_url = "https://api.spotify.com/v1/search"
         params = {"q": track_name +" "+ artist, "type": "track", "limit": 1}
         response = await client.get(search_url, headers=headers, params=params)
-        print(response.json())
+   
     if not response.json().get("tracks", {}).get("items"):
         raise HTTPException(status_code=404, detail="Canción no encontrada")
     
