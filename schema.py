@@ -4,14 +4,14 @@ from typing import List, Optional
 
 class Image(BaseModel):
     """Spotify image resource"""
-    url: HttpUrl
+    url: str
     height: Optional[int] = None
     width: Optional[int] = None
 
 class Artist(BaseModel):
     """Simplified artist representation"""
     name: str
-    external_url: HttpUrl
+    external_url: str
     images: List[Image] = []
     
     @classmethod
@@ -25,7 +25,7 @@ class Artist(BaseModel):
 class Album(BaseModel):
     """Simplified album representation"""
     name: str
-    external_url: HttpUrl
+    external_url: str
     images: List[Image]
     release_date: str
     total_tracks: int
@@ -43,11 +43,11 @@ class Album(BaseModel):
 class Track(BaseModel):
     """Simplified track representation"""
     name: str
-    external_url: HttpUrl
+    external_url: str
     duration_ms: int
     explicit: bool
     popularity: int
-    preview_url: Optional[HttpUrl] = None
+    preview_url: Optional[str] = None
     images: List[Image] = []
     
     @classmethod
