@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.security import 
 from database import  get_db
 from sqlalchemy.orm import Session
-from fastapi import Depends
+from fastapi import Depends, Form
 import json
 import httpx
 import asyncio
@@ -147,10 +147,42 @@ async def callback(code: str,db:Session =Depends(get_db)):
     # return response
     
 
+def simplify_spotify_result(raw_result):
+    try:
+        item = raw_result['tracks']['items'][0] if raw_result.get('tracks', {}).get('items') else None
+        if not item:
+            return {'error': 'No se encontraron resultados válidos'}
+
+        track_info = {
+            'track': {
+                'name': item.get('name'),
+                'external_url': item.get('external_urls', {}).get('spotify'),
+                'images': [img['url'] for img in item.get('album', {}).get('images', [])],
+            },
+            'album': {
+                'name': item.get('album', {}).get('name'),
+                'external_url': item.get('album', {}).get('external_urls', {}).get('spotify'),
+                'images': [img['url'] for img in item.get('album', {}).get('images', [])],
+            },
+            'artist': {
+                'name': item.get('artists', [{}])[0].get('name'),
+                'external_url': item.get('artists', [{}])[0].get('external_urls', {}).get('spotify'),
+                # Nota: los artistas normalmente no traen imágenes aquí
+                'images': []  # Si tienes otra fuente para imágenes de artistas, se puede agregar
+            }
+        }
+
+        print('track_infoooooooooooooooooooooooooooooooooooooooooooo')
+        print(track_info)
+        return track_info
+    except Exception as e:
+        return {'error': str(e)}
+
+
 @app.post("/get-track-info")
 async def process_image_route(
     file: Annotated[UploadFile, File()],
-    spotify_token: str = None,
+    spotify_token: str = Form(None),
     model_api_key: str = None
 ):
     dict_file = await upload_image(file)
@@ -172,13 +204,15 @@ async def process_image_route(
             try:
                 tasks = [
                     asyncio.create_task(
-                        find_spotify(session, spotify_token, song)
+                         find_spotify(session, spotify_token, song)
+                       
                     ) for song in tracks_data
                 ]
                 
                 for future in asyncio.as_completed(tasks):
                     try:
                         result = await future
+                        # simplified = await simplify_spotify_result(result)
                         yield f"data: {json.dumps(result)}\n\n"
                     except Exception as e:
                         yield f"data: {json.dumps({'error': str(e)})}\n\n"
