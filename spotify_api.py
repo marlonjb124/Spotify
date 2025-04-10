@@ -1,5 +1,6 @@
 import aiohttp
 from fastapi.routing import APIRouter
+from schema import SimplifiedTrackResponse,Album,Artist,Track
 spotify = APIRouter()
 
 
@@ -90,35 +91,55 @@ async def find_spotify(session: aiohttp.ClientSession, spotify_token: str, ai_re
         ) as response:
             print(f"[3] Respuesta recibida. Estado HTTP: {response.status}")
             data = await response.json()
-            item = data['tracks']['items'][0] if data.get('tracks', {}).get('items') else None
-            if not item:
-                return {'error': 'No se encontraron resultados válidos'}
+        #     item = data['tracks']['items'][0] if data.get('tracks', {}).get('items') else None
+        #     if not item:
+        #         return {'error': 'No se encontraron resultados válidos'}
             
-            track_info = {
-            'track': {
-                'name': item.get('name'),
-                'external_url': item.get('external_urls', {}).get('spotify'),
-                'images': [img['url'] for img in item.get('album', {}).get('images', [])],
-            },
-            'album': {
-                'name': item.get('album', {}).get('name'),
-                'external_url': item.get('album', {}).get('external_urls', {}).get('spotify'),
-                'images': [img['url'] for img in item.get('album', {}).get('images', [])],
-            },
-            'artist': {
-                'name': item.get('artists', [{}])[0].get('name'),
-                'external_url': item.get('artists', [{}])[0].get('external_urls', {}).get('spotify'),
-                # Nota: los artistas normalmente no traen imágenes aquí
-                'images': []  # Si tienes otra fuente para imágenes de artistas, se puede agregar
-            }
-        }
+        #     track_info = {
+        #     'track': {
+        #         'name': item.get('name'),
+        #         'external_url': item.get('external_urls', {}).get('spotify'),
+        #         'images': [img['url'] for img in item.get('album', {}).get('images', [])],
+        #     },
+        #     'album': {
+        #         'name': item.get('album', {}).get('name'),
+        #         'external_url': item.get('album', {}).get('external_urls', {}).get('spotify'),
+        #         'images': [img['url'] for img in item.get('album', {}).get('images', [])],
+        #     },
+        #     'artist': {
+        #         'name': item.get('artists', [{}])[0].get('name'),
+        #         'external_url': item.get('artists', [{}])[0].get('external_urls', {}).get('spotify'),
+        #         # Nota: los artistas normalmente no traen imágenes aquí
+        #         'images': []  # Si tienes otra fuente para imágenes de artistas, se puede agregar
+        #     }
+        # }
 
 
-            print(f"[4] Datos completos: {track_info}")
-            return track_info
+            # print(f"[4] Datos completos: {track_info}")
+            return data
     except Exception as e:
         print(f"[ERROR] En find_spotify: {str(e)}")
         raise
+def transform_spotify_response(spotify_data: dict) -> SimplifiedTrackResponse:
+    """
+    Transforms the raw Spotify API response into our simplified format.
+    
+    Args:
+        spotify_data: Raw response from Spotify API
+        
+    Returns:
+        SimplifiedTrackResponse: Cleaned and structured data
+    """
+    if not spotify_data.get('tracks', {}).get('items'):
+        raise ValueError("No track data found in Spotify response")
+    
+    track_data = spotify_data['tracks']['items'][0]
+    
+    return SimplifiedTrackResponse(
+        track=Track.from_spotify(track_data),
+        album=Album.from_spotify(track_data['album']),
+        artists=[Artist.from_spotify(artist) for artist in track_data['artists']]
+    )
         
                    
             

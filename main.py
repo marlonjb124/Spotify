@@ -21,6 +21,7 @@ from database import engine, Base
 from models import User as UserModel  # Importar todos los modelos
 from router_api import get_data_from_image
 from spotify_api import find_spotify
+from spotify_api import transform_spotify_response
 # # Crear todas las tablas
 # Base.metadata.create_all(bind=engine)
 load_dotenv()
@@ -147,7 +148,7 @@ async def callback(code: str,db:Session =Depends(get_db)):
     # return response
     
 
-def simplify_spotify_result(raw_result):
+async def simplify_spotify_result(raw_result):
     try:
         item = raw_result['tracks']['items'][0] if raw_result.get('tracks', {}).get('items') else None
         if not item:
@@ -193,7 +194,7 @@ async def process_image_route(
         model_response = await get_data_from_image(
             session,
             dict_file['url'], 
-            model_api_key or GEMMA_API_KEY_MARLON
+            model_api_key or GEMMA_API_KEY_CESAR
         )
         
         content = model_response["choices"][0]["message"]["content"]
@@ -204,7 +205,7 @@ async def process_image_route(
             try:
                 tasks = [
                     asyncio.create_task(
-                         find_spotify(session, spotify_token, song)
+                        find_spotify(session, spotify_token, song)
                        
                     ) for song in tracks_data
                 ]
@@ -212,8 +213,12 @@ async def process_image_route(
                 for future in asyncio.as_completed(tasks):
                     try:
                         result = await future
+                        
                         # simplified = await simplify_spotify_result(result)
-                        yield f"data: {json.dumps(result)}\n\n"
+                        simplified_data = transform_spotify_response(result)
+                        print(simplified_data)
+                        dict_object= simplified_data.model_dump()
+                        yield f"data: {dict_object}\n\n"
                     except Exception as e:
                         yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
