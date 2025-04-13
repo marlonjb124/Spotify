@@ -47,7 +47,16 @@ GEMMA_API_KEY_MARLON_2=os.getenv("GEMMA_API_KEY_MARLON_2")
 GEMMA_API_KEY_CESAR_2=os.getenv("GEMMA_API_KEY_CESAR_2")
 GEMMA_API_KEY_MARLON_3=os.getenv("GEMMA_API_KEY_MARLON_3")
 OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_MARLON_3]
-REDIRECT_URI = f"https://{os.getenv('VERCEL_URL', 'localhost:8000')}/callback"
+
+# Construcción mejorada de REDIRECT_URI con manejo adecuado de Vercel
+vercel_url = os.getenv("VERCEL_URL")
+print("VERCEL_URL:", vercel_url)
+if vercel_url:
+    # Vercel URL no incluye https://, así que debemos agregarlo
+    REDIRECT_URI = f"https://{vercel_url}/callback"
+else:
+    # Fallback para desarrollo local
+    REDIRECT_URI = "http://localhost:8000/callback"
 
 # Configuración mejorada de ClientSession
 
@@ -458,5 +467,13 @@ def format_response(spotify_data):
 @app.get("/home")
 async def home():
     return{"hi":"sda"}
-    
-    
+
+@app.get("/debug-env")
+async def debug_env():
+    """Endpoint para depurar variables de entorno"""
+    return {
+        "vercel_url_raw": os.getenv("VERCEL_URL", "No disponible"),
+        "vercel_env": os.getenv("VERCEL_ENV", "No disponible"),
+        "redirect_uri_final": REDIRECT_URI,
+        "all_env_vars": {k: v for k, v in os.environ.items() if not k.startswith("_")}
+    }
