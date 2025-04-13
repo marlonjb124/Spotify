@@ -19,7 +19,7 @@ async def get_data_from_image(session:aiohttp.ClientSession,url:str,api_router_k
                             {
                                 "type": "text",
                                 "text": """Necesito que me extraigas de la imagen los playlist,artistas,album,canciones y me lo devuelvas un json con la siguiente estructura  [{"track": "track_name", "artist": "artist_name", "album": "album_name"}]
-                                .En caso de que no reconozcas un valor asignar null (sin comillas, como valor JSON nulo). En caso de q la imagen no tenga nada q ver con spotify y esten fuera de contexto solo devolver la palabra "Null" en la respuesta."""
+                                .En caso de que no reconozcas un valor asignar null (sin comillas, como valor JSON nulo).OJO, Solod evuelve exactamente ese formato, no le ahgas ninguna descripcion o respodnas de mas"""
                             },
                             {
                                 "type": "image_url",
