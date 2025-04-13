@@ -23,6 +23,10 @@ from models import User as UserModel  # Importar todos los modelos
 from router_api import get_data_from_image
 from spotify_api import find_spotify
 from spotify_api import transform_spotify_response
+# chat improts
+from aiohttp import ClientSession, TCPConnector, ClientTimeout
+import asyncio
+import json
 # # Crear todas las tablas
 # Base.metadata.create_all(bind=engine)
 load_dotenv()
@@ -43,7 +47,118 @@ GEMMA_API_KEY_MARLON_2=os.getenv("GEMMA_API_KEY_MARLON_2")
 GEMMA_API_KEY_CESAR_2=os.getenv("GEMMA_API_KEY_CESAR_2")
 GEMMA_API_KEY_MARLON_3=os.getenv("GEMMA_API_KEY_MARLON_3")
 OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_MARLON_3]
-REDIRECT_URI = "http://localhost:8000/callback"
+REDIRECT_URI = "https://spotify-ea5ll4su8-marlons-projects-71b5c7f1.vercel.app/callback"
+
+# Configuración mejorada de ClientSession
+
+
+@app.post("/get_tracks_array_chat")
+async def Images_Spotifind_chat(
+    files: Annotated[List[UploadFile], File()],
+    spotify_token: str = Form(None)
+):
+    # Configurar el pool de conexiones
+    connector = TCPConnector(
+        limit=100,              # Máximo 100 conexiones simultáneas en total
+        limit_per_host=20,      # Máximo 20 conexiones por servicio (Spotify/Cloudinary)
+        enable_cleanup_closed=True,  # Limpiar conexiones cerradas automáticamente
+        force_close=False       # Reutilizar conexiones siempre que sea posible
+    )
+    
+    # Configurar timeout global para todas las operaciones HTTP
+    timeout = ClientTimeout(total=30)  # 30 segundos máximo por operación
+    
+    async with ClientSession(
+        connector=connector,
+        timeout=timeout,
+        headers={"User-Agent": "MySpotifyApp/1.0"}
+    ) as session:
+        # 1. Subir imágenes a Cloudinary en paralelo
+        upload_tasks = [upload_image(file) for file in files]
+        cloudinary_results = await asyncio.gather(*upload_tasks, return_exceptions=True)
+        
+        # Filtrar solo resultados exitosos
+        valid_images = [
+            result for result in cloudinary_results
+            if not isinstance(result, Exception)
+        ]
+        
+        # 2. Procesamiento paralelo con control de concurrencia
+        semaphore = asyncio.Semaphore(10)  # Máximo 10 imágenes procesadas concurrentemente
+        
+        async def process_image(image_result):
+            async with semaphore:  # Controlar carga de procesamiento
+                try:
+                    # Rotación de API keys con seguridad para hilos
+                    api_key = await asyncio.to_thread(
+                        next, 
+                        generador_ciclico(OPEN_ROUTER_API_KEYS)
+                    )
+                    
+                    # Obtener datos de la imagen
+                    model_response = await get_data_from_image(
+                        session, 
+                        image_result['url'], 
+                        api_key
+                    )
+                    
+                    # Procesar contenido de IA
+                    content = model_response["choices"][0]["message"]["content"]
+                    if content.strip() == "Null":
+                        return []
+                    
+                    # Extraer JSON mejorado
+                    tracks_data = extract_json_from_content(content)
+                    if not tracks_data:
+                        return []
+                    
+                    # 3. Búsqueda en Spotify con rate limiting
+                    spotify_sem = asyncio.Semaphore(5)  # 5 solicitudes concurrentes a Spotify
+                    
+                    async def process_track(track):
+                        async with spotify_sem:
+                            try:
+                                result = await find_spotify(
+                                    session, 
+                                    spotify_token, 
+                                    track
+                                )
+                                return transform_spotify_response(result).model_dump()
+                            except Exception as e:
+                                print(f"Error en track {track}: {str(e)}")
+                                return None
+                    
+                    # Procesar tracks en paralelo
+                    track_tasks = [process_track(track) for track in tracks_data]
+                    results = await asyncio.gather(*track_tasks)
+                    
+                    return [r for r in results if r is not None]
+                    
+                except Exception as e:
+                    print(f"Error procesando imagen: {str(e)}")
+                    return []
+        
+        # 4. Generar stream de resultados
+        async def generate_stream():
+            processing_tasks = [
+                asyncio.create_task(process_image(img)) 
+                for img in valid_images
+            ]
+            
+            # Enviar resultados tan pronto estén disponibles
+            for future in asyncio.as_completed(processing_tasks):
+                try:
+                    tracks = await future
+                    for track in tracks:
+                        yield f"data: {json.dumps(track)}\n\n"
+                except Exception as e:
+                    print(f"Error en stream: {str(e)}")
+                    continue
+            
+            # Fin del stream
+            yield "event: end\ndata: stream-completed\n\n"
+        
+        return StreamingResponse(generate_stream(), media_type="text/event-stream")
 # Configuración desde variables de entorno
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
@@ -51,7 +166,6 @@ cloudinary.config(
     api_secret=os.getenv("CLOUDINARY_API_SECRET"),
     secure=True
 )
-
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 MAX_FILE_SIZE = 20 * 1024 * 1024 
 T = TypeVar('T')  # Tipo genérico
@@ -163,8 +277,8 @@ async def callback(code: str,db:Session =Depends(get_db)):
 @app.post("/get-track-info")
 async def process_image_route(
     file: Annotated[UploadFile, File()],
-    spotify_token: str = Form(None),
-    model_api_key: str = None
+    spotify_token: str = Form(None)
+
 ):
     dict_file = await upload_image(file)
     
@@ -311,109 +425,7 @@ async def Images_Spotifind_mine(
             await session.close()
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
-# @app.post("/get_tracks_array")
-# async def Images_Spotifind(
-#     files: Annotated[List[UploadFile], File()],
-#     spotify_token: str = Form(None)
-# ):
-#     # 1. Subir imágenes a Cloudinary
-#     upload_tasks = [upload_image(file) for file in files]
-#     cloudinary_results = await asyncio.gather(*upload_tasks)
-    
-#     # 2. Procesamiento concurrente
-#     api_key_generator = generador_ciclico(OPEN_ROUTER_API_KEYS + [GEMMA_API_KEY_CESAR])
-    
-#     async with aiohttp.ClientSession() as session:
-#         # 3. Crear tareas como corrutinas (no generadores)
-#         processing_coros = [
-#             process_single_image_tracks(
-#                 session=session,
-#                 image_url=result['url'],
-#                 model_api_key=next(api_key_generator),
-#                 spotify_token=spotify_token
-#             ).__anext__()  # Convertimos el generador en corrutina
-#             for result in cloudinary_results
-#         ]
-        
-#         # 4. Crear tareas asyncio
-#         processing_tasks = [asyncio.create_task(coro) for coro in processing_coros]
-        
-#         # 5. Generador de resultados
-#         async def result_generator():
-#             try:
-#                 for future in asyncio.as_completed(processing_tasks):
-#                     try:
-#                         track_gen = await future
-#                         async for track in track_gen:
-#                             yield track
-#                     except Exception as e:
-#                         yield f"data: {json.dumps({'error': str(e)})}\n\n"
-#             finally:
-#                 yield "event: end\ndata: stream-completed\n\n"
-        
-#         return StreamingResponse(result_generator(), media_type="text/event-stream")
-
-# async def process_single_image_tracks(
-#     session: aiohttp.ClientSession,
-#     image_url: str,
-#     model_api_key: str,
-#     spotify_token: str
-# ) -> AsyncGenerator[str, None]:
-#     """Versión modificada para trabajar con as_completed"""
-#     try:
-#         # 1. Obtener datos del modelo AI
-#         model_response = await get_data_from_image(
-#             session,
-#             image_url,
-#             model_api_key
-#         )
-        
-#         # 2. Parsear respuesta
-#         content = model_response["choices"][0]["message"]["content"]
-#         json_data = content.split("```json")[1].split("```")[0].strip()
-#         tracks_data = json.loads(json_data)
-        
-#         # 3. Buscar tracks en Spotify concurrentemente
-#         spotify_tasks = [
-#             asyncio.create_task(find_spotify(session, spotify_token, song))
-#             for song in tracks_data
-#         ]
-        
-#         # 4. Retornar generador de resultados
-#         for future in asyncio.as_completed(spotify_tasks):
-#             try:
-#                 result = await future
-#                 simplified = transform_spotify_response(result)
-#                 yield f"data: {simplified.model_dump()}\n\n"
-#             except Exception as e:
-#                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                
-#     except Exception as e:
-#         yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        
-#         # 2. Parsear respuesta
-#         content = model_response["choices"][0]["message"]["content"]
-#         json_data = content.split("```json")[1].split("```")[0].strip()
-#         tracks_data = json.loads(json_data)
-        
-#         # 3. Buscar tracks en Spotify concurrentemente
-#         spotify_tasks = [
-#             asyncio.create_task(find_spotify(session, spotify_token, song))
-#             for song in tracks_data
-#         ]
-        
-#         # 4. Retornar generador de resultados
-#         for future in asyncio.as_completed(spotify_tasks):
-#             try:
-#                 result = await future
-#                 simplified = transform_spotify_response(result)
-#                 yield f"data: {simplified.model_dump()}\n\n"
-#             except Exception as e:
-#                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                
-#     except Exception as e:
-#         yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
+#
 
 
 

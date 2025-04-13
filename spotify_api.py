@@ -1,6 +1,7 @@
 import aiohttp
 from fastapi.routing import APIRouter
 from schema import SimplifiedTrackResponse,Album,Artist,Track
+# from aiocircuitbreaker import circuit
 spotify = APIRouter()
 
 
@@ -66,6 +67,7 @@ async def play_song(track_name: str,artist:str,):
         raise HTTPException(status_code=400, detail="Error al reproducir. ¿El dispositivo está activo?")
     
     return {"status": "¡Reproduciendo!", "track_uri": track_uri}
+
 
 async def find_spotify_user(token:str):
     headers = {"Authorization": f"Bearer {token}"}
