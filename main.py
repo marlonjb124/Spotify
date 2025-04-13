@@ -47,7 +47,7 @@ GEMMA_API_KEY_MARLON_2=os.getenv("GEMMA_API_KEY_MARLON_2")
 GEMMA_API_KEY_CESAR_2=os.getenv("GEMMA_API_KEY_CESAR_2")
 GEMMA_API_KEY_MARLON_3=os.getenv("GEMMA_API_KEY_MARLON_3")
 OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_MARLON_3]
-REDIRECT_URI = "https://spotify-ea5ll4su8-marlons-projects-71b5c7f1.vercel.app/callback"
+REDIRECT_URI = f"https://{os.getenv('VERCEL_URL', 'localhost:8000')}/callback"
 
 # Configuración mejorada de ClientSession
 
