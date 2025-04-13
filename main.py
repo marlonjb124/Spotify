@@ -367,7 +367,7 @@ async def Images_Spotifind_mine(
             
             # Extraer el JSON de la respuesta
             content = model_response["choices"][0]["message"]["content"]
-            
+            print("content",content)
             # Si la respuesta es simplemente "Null", retornar lista vacía
             if content.strip() == "Null":
                 return []
@@ -385,6 +385,7 @@ async def Images_Spotifind_mine(
                     
                 # Corregir valores Null sin comillas que causan el error JSON
                 json_text = json_text.replace(': Null', ': null').replace(':Null', ':null')
+                print("json_text",json_text)
                 
                 tracks_data = json.loads(json_text)
                 print("cuantas canciones responde la IA de la imagen")
