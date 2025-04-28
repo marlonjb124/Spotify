@@ -263,7 +263,7 @@ async def callback(code: str):
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": "http://localhost:3000/playground",
                 "client_id": CLIENT_ID,
                 "client_secret": CLIENT_SECRET,
             },
