@@ -1,5 +1,8 @@
 import aiohttp
 from fastapi.routing import APIRouter
+from fastapi import HTTPException
+import httpx
+
 from schema import SimplifiedTrackResponse,Album,Artist,Track
 # from aiocircuitbreaker import circuit
 spotify = APIRouter()
@@ -27,7 +30,7 @@ async def play_song(track_name: str,artist:str,):
     # if not tokens.get("access_token"):
     #     raise HTTPException(status_code=401, detail="No autenticado. Ve a /login primero.")
     
-    headers = {"Authorization": "Bearer BQDGQVwuh5AaHl-zsn4k32Bj1noD6p65XFPriSrvK-f2OopBxcC5LzqXT3Wb9GcUTbmoWoQ9T6yHV2uG09pr1ldXvSmyWqif-4XTlao0knrZSxnAXAE2_Ub4k9dlFPYsxVroNEO7nKyg15UdADzgCYaSXVTBN2XdCC5ay_XvHQtp0d0vdnkLexZeuPsTp5dz1yJ8AqbYmJP2r2QXAiO79Zqhd-JWUMytKXC29libvzJK_9xr9Hc"}
+    headers = {"Authorization": "Bearer BQA6WX0Qe2M61oJQ1CHNg_2c06u8Rt2L7RvwSurvkEhrIU3ksOTUGqWgVy0x6wf17pWgVPpIPv-Efj-8jjFNgBY01TAPmSq0PEwhDqEi9EQxdmHyY5jKWhO0F2Zl465rgSyNK8mkyzy8EfMhFgwQC3vP_hFrjAKFcgq-UYj8loguMdTeoLSJYpYg5Id5WXlOOpp7ZaWaddtS01zcDTBo0mg5EuZMO80RYUbucbtRPdOpjaJ8AqSBR9g"}
     
     # Buscar la canción
     async with httpx.AsyncClient() as client:

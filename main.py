@@ -22,7 +22,7 @@ from database import engine, Base
 from models import User as UserModel  # Importar todos los modelos
 from router_api import get_data_from_image
 from spotify_api import find_spotify
-from spotify_api import transform_spotify_response
+from spotify_api import transform_spotify_response,spotify
 # chat improts
 from aiohttp import ClientSession, TCPConnector, ClientTimeout
 import asyncio
@@ -31,6 +31,7 @@ import json
 # Base.metadata.create_all(bind=engine)
 load_dotenv()
 app = FastAPI()
+app.include_router(spotify)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Permite todos los orígenes (¡cambiar en producción!)
@@ -50,7 +51,7 @@ OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_MARLON_3]
 
 # Construcción mejorada de REDIRECT_URI con manejo adecuado de Vercel
 vercel_url = os.getenv("VERCEL_URL")
-print("VERCEL_URL:", vercel_url)
+print( vercel_url)
 if vercel_url:
     # Vercel URL no incluye https://, así que debemos agregarlo
     REDIRECT_URI = f"https://{vercel_url}/callback"
@@ -253,7 +254,7 @@ async def login():
     auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
     return RedirectResponse(auth_url)
 @app.get("/callback")
-async def callback(code: str,db:Session =Depends(get_db)):
+async def callback(code: str):
     print("entree")
 
     async with httpx.AsyncClient() as client:
@@ -269,6 +270,7 @@ async def callback(code: str,db:Session =Depends(get_db)):
         )
     
     if response.status_code != 200:
+        print(response.json())
         raise HTTPException(status_code=400, detail="Error de autenticación")
     print(response.json()["access_token"])
     return response.json()["access_token"]
