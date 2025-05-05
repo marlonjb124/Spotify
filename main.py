@@ -20,7 +20,7 @@ import cloudinary.uploader
 from urllib.parse import urlencode
 from database import engine, Base
 from models import User as UserModel  # Importar todos los modelos
-from router_api import get_data_from_image
+from router_api import get_data_from_image, get_data_from_image_structured_output
 from spotify_api import find_spotify
 from spotify_api import transform_spotify_response,spotify
 # chat improts
@@ -50,14 +50,14 @@ GEMMA_API_KEY_MARLON_3=os.getenv("GEMMA_API_KEY_MARLON_3")
 OPEN_ROUTER_API_KEYS:List= [GEMMA_API_KEY_MARLON_3]
 
 # Construcción mejorada de REDIRECT_URI con manejo adecuado de Vercel
-vercel_url = os.getenv("VERCEL_URL")
-print( vercel_url)
-if vercel_url:
+# vercel_url = os.getenv("VERCEL_URL")
+
+# if vercel_url:
     # Vercel URL no incluye https://, así que debemos agregarlo
-    REDIRECT_URI = f"https://{vercel_url}/callback"
-else:
-    # Fallback para desarrollo local
-    REDIRECT_URI = "http://localhost:8000/callback"
+REDIRECT_URI = f"http://localhost:8000/callback"
+# else:
+#     # Fallback para desarrollo local
+#     REDIRECT_URI = "http://localhost:8000/callback"
 
 # Configuración mejorada de ClientSession
 
@@ -244,6 +244,8 @@ async def image_processing_generator(images, spotify_token):
 
 @app.get("/login")
 async def login():
+    print("sadas")
+    print(REDIRECT_URI)
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
@@ -256,6 +258,7 @@ async def login():
 @app.get("/callback")
 async def callback(code: str):
     print("entree")
+    print(code)
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
@@ -263,7 +266,7 @@ async def callback(code: str):
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": "http://localhost:3000/playground",
+                "redirect_uri": REDIRECT_URI,
                 "client_id": CLIENT_ID,
                 "client_secret": CLIENT_SECRET,
             },
@@ -438,12 +441,96 @@ async def Images_Spotifind_mine(
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
 #
+@app.post("/get_vibe_from_image")
+async def process_image_route(
+    file: Annotated[UploadFile, File()],
+    spotify_token: str = Form(None)
+
+):
+    dict_file = await upload_image(file)
+    
+    # Crear sesión manualmente (sin async with)
+    session = aiohttp.ClientSession()
+    try:
+        key= next(generador_ciclico(OPEN_ROUTER_API_KEYS))
+        print(key)
+        model_response = await get_data_from_image_structured_output(
+            session,
+            dict_file['url'], 
+            key or GEMMA_API_KEY_CESAR
+        )
+        
+        content = model_response["choices"][0]["message"]["content"]
+
+        json_data = json.loads(content)
+        # print(json_data["data"])
+        
+        print(json_data["info"], "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAasdasdadasdasd")
+        # json_data = content.split("```json")[1].split("```")[0].strip()
+        # tracks_data = json.loads(json_data)
+        # null_album = [song for song in tracks_data if "null" in song["album"]]
+        # assign_album =[song["album"] for song in null_album]
+
+        async def generate_results():
+            try:
+                tasks = [asyncio.create_task(
+                            find_spotify(session, spotify_token, track)
+                        )for track in json_data["data"]]
+
+                    
+                
+                
+                    
+
+                  
+                # for album in json_data['albums']:
+                #     tasks.append(
+                #         asyncio.create_task(
+                #             find_spotify(session, spotify_token, album,type="album")
+                #         )
+                #     )
+                # for artist in json_data['artists']:
+                #     tasks.append(
+                #         asyncio.create_task(
+                #             find_spotify(session, spotify_token, artist,type="artist")
+                #         )
+                #     )
+                print("tasks",tasks)
+                
+                for future in asyncio.as_completed(tasks):
+                    try:
+                        result = await future
+                        print("resultsssssssssssssssssssssssssssssssssssss de tareas", result)
+                        jsonable= jsonable_encoder(result)
+                        yield f"data: {json.dumps(jsonable)}\n\n"                        
+                        # simplified = await simplify_spotify_result(result)
+                        # simplified_data = transform_spotify_response(result)
+                        # print(simplified_data)
+                        # dict_object= simplified_data.model_dump()
+                        # jsonable= jsonable_encoder(dict_object)
+                        # yield f"data: {json.dumps(jsonable)}\n\n"
+                    except Exception as e:
+                        
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                await session.close()  # Cerrar sesión cuando termine el generador
+                
+            yield "event: end\ndata: stream-completed\n\n"
+
+        return StreamingResponse(generate_results(), media_type="text/event-stream")
+
+    except json.JSONDecodeError:
+        await session.close()
+        raise HTTPException(400, "Formato de respuesta inválido")
+    # except Exception as e:
+    #     await session.close()
+    #     print(e)
+    #     raise HTTPException(500, f"Error interno: {str(e)}")
 
 
 
 
-
-@app.post("/process-images")
+@app.post("/process_images")
 async def process_images(images: list, spotify_token: str):
     """
     Endpoint principal que recibe:

@@ -83,7 +83,15 @@ async def find_spotify_user(token:str):
     
 async def find_spotify(session: aiohttp.ClientSession, spotify_token: str, ai_response: dict):
     print("[1] Iniciando búsqueda en Spotify")
+    # if type =="album":
+    #     q = f"{ai_response['album_name']} {ai_response['authors_name'][0]}"
+    # elif type =="track":
+    #     q = f"{ai_response['track_name']} {ai_response['artist_name'][0]}"
+    # elif type =="artist":
+    #     q = f"{ai_response['artist_name']}"
     try:
+        # print("Q: ",q)
+        # print("type: ",type)
         print(f"[2] Estado de la sesión: {session.closed}")  # Debe ser False
         async with session.get(
             SPOTIFY_API_URL,
@@ -96,31 +104,8 @@ async def find_spotify(session: aiohttp.ClientSession, spotify_token: str, ai_re
         ) as response:
             print(f"[3] Respuesta recibida. Estado HTTP: {response.status}")
             data = await response.json()
-        #     item = data['tracks']['items'][0] if data.get('tracks', {}).get('items') else None
-        #     if not item:
-        #         return {'error': 'No se encontraron resultados válidos'}
-            
-        #     track_info = {
-        #     'track': {
-        #         'name': item.get('name'),
-        #         'external_url': item.get('external_urls', {}).get('spotify'),
-        #         'images': [img['url'] for img in item.get('album', {}).get('images', [])],
-        #     },
-        #     'album': {
-        #         'name': item.get('album', {}).get('name'),
-        #         'external_url': item.get('album', {}).get('external_urls', {}).get('spotify'),
-        #         'images': [img['url'] for img in item.get('album', {}).get('images', [])],
-        #     },
-        #     'artist': {
-        #         'name': item.get('artists', [{}])[0].get('name'),
-        #         'external_url': item.get('artists', [{}])[0].get('external_urls', {}).get('spotify'),
-        #         # Nota: los artistas normalmente no traen imágenes aquí
-        #         'images': []  # Si tienes otra fuente para imágenes de artistas, se puede agregar
-        #     }
-        # }
-
-
-            # print(f"[4] Datos completos: {track_info}")
+            print("devolviendo data de spotify")
+            # print(data)
             return data
     except Exception as e:
         print(f"[ERROR] En find_spotify: {str(e)}")
