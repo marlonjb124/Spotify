@@ -404,7 +404,8 @@ async def Images_Spotifind_mine(
                 
                 # Usar asyncio.gather para mejor rendimiento
                 spotify_results = await asyncio.gather(*spotify_tasks)
-            
+                # for spotify_result in spotify_results:
+                #     print("spotify_resultttttttttttttttttttttttttttttttttttttttttttttttttttttttt",spotify_result) 
                 # Transformar los resultados
                 return [transform_spotify_response(result).model_dump() for result in spotify_results]
                 
@@ -429,7 +430,7 @@ async def Images_Spotifind_mine(
             for future in asyncio.as_completed(processing_tasks):
                 print("entrando")
                 print(processing_tasks[0])
-                print(processing_tasks[1])
+
                 tracks = await future
                 for track in tracks:
                     yield f"data: {json.dumps(track)}\n\n"
@@ -476,41 +477,17 @@ async def process_image_route(
                 tasks = [asyncio.create_task(
                             find_spotify(session, spotify_token, track)
                         )for track in json_data["data"]]
-
-                    
-                
-                
-                    
-
-                  
-                # for album in json_data['albums']:
-                #     tasks.append(
-                #         asyncio.create_task(
-                #             find_spotify(session, spotify_token, album,type="album")
-                #         )
-                #     )
-                # for artist in json_data['artists']:
-                #     tasks.append(
-                #         asyncio.create_task(
-                #             find_spotify(session, spotify_token, artist,type="artist")
-                #         )
-                #     )
                 print("tasks",tasks)
-                
+                        
                 for future in asyncio.as_completed(tasks):
                     try:
                         result = await future
-                        print("resultsssssssssssssssssssssssssssssssssssss de tareas", result)
-                        jsonable= jsonable_encoder(result)
-                        yield f"data: {json.dumps(jsonable)}\n\n"                        
-                        # simplified = await simplify_spotify_result(result)
-                        # simplified_data = transform_spotify_response(result)
-                        # print(simplified_data)
-                        # dict_object= simplified_data.model_dump()
-                        # jsonable= jsonable_encoder(dict_object)
-                        # yield f"data: {json.dumps(jsonable)}\n\n"
+                        print("results from tasks:", result)
+                        simplified_data = transform_spotify_response(result)
+                        dict_object = simplified_data.model_dump()
+                        jsonable = jsonable_encoder(dict_object)
+                        yield f"data: {json.dumps(jsonable)}\n\n"
                     except Exception as e:
-                        
                         yield f"data: {json.dumps({'error': str(e)})}\n\n"
             finally:
                 await session.close()  # Cerrar sesión cuando termine el generador
@@ -608,15 +585,11 @@ async def recommendations(token:str,type:str,photo:Annotated[UploadFile,File()])
                 for future in asyncio.as_completed(tasks):
                     try:
                         result = await future
-                        print("resultsssssssssssssssssssssssssssssssssssss de tareas", result)
-                        jsonable= jsonable_encoder(result)
-                        yield f"data: {json.dumps(jsonable)}\n\n"                        
-                        # simplified = await simplify_spotify_result(result)
-                        # simplified_data = transform_spotify_response(result)
-                        # print(simplified_data)
-                        # dict_object= simplified_data.model_dump()
-                        # jsonable= jsonable_encoder(dict_object)
-                        # yield f"data: {json.dumps(jsonable)}\n\n"
+                        print("results from tasks:", result)
+                        simplified_data = transform_spotify_response(result)
+                        dict_object = simplified_data.model_dump()
+                        jsonable = jsonable_encoder(dict_object)
+                        yield f"data: {json.dumps(jsonable)}\n\n"
                     except Exception as e:
                         
                         yield f"data: {json.dumps({'error': str(e)})}\n\n"
