@@ -20,8 +20,8 @@ import cloudinary.uploader
 from urllib.parse import urlencode
 from database import engine, Base
 from models import User as UserModel  # Importar todos los modelos
-from router_api import get_data_from_image, get_data_from_image_structured_output
-from spotify_api import find_spotify
+from router_api import get_data_from_image, get_data_from_image_structured_output, get_recommendations
+from spotify_api import find_spotify, track_history
 from spotify_api import transform_spotify_response,spotify
 # chat improts
 from aiohttp import ClientSession, TCPConnector, ClientTimeout
@@ -250,7 +250,7 @@ async def login():
         "client_id": CLIENT_ID,
         "response_type": "code",
         "redirect_uri": REDIRECT_URI,
-        "scope": "user-modify-playback-state user-read-playback-state"
+        "scope": "user-modify-playback-state user-read-playback-state user-top-read"
         # "state": "1234567890"
     }
     auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
@@ -557,6 +557,78 @@ def format_response(spotify_data):
 @app.get("/home")
 async def home():
     return{"hi":"sda"}
+
+@app.post("/recommendations")
+async def recommendations(token:str,type:str,photo:Annotated[UploadFile,File()]):
+    dict_file = await upload_image(photo)
+    history = await track_history(token,type)
+    key = next(generador_ciclico(OPEN_ROUTER_API_KEYS))
+    print(history["items"])
+    to_model = [{"name":hist["name"]} for hist in history["items"]]
+    session = aiohttp.ClientSession()
+    try:       
+        response_model = await get_recommendations(session,type,key,dict_file["url"],to_model)
+        content = response_model["choices"][0]["message"]["content"]
+
+        json_data = json.loads(content)
+        # print(json_data["data"])
+            
+        print(json_data["info"], "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAasdasdadasdasd")
+        # json_data = content.split("```json")[1].split("```")[0].strip()
+        # tracks_data = json.loads(json_data)
+        # null_album = [song for song in tracks_data if "null" in song["album"]]
+        # assign_album =[song["album"] for song in null_album]
+
+        async def generate_results():
+            try:
+                tasks = [asyncio.create_task(
+                            find_spotify(session, token, track)
+                        )for track in json_data["data"]]
+
+                    
+                
+                
+                    
+
+                
+                # for album in json_data['albums']:
+                #     tasks.append(
+                #         asyncio.create_task(
+                #             find_spotify(session, spotify_token, album,type="album")
+                #         )
+                #     )
+                # for artist in json_data['artists']:
+                #     tasks.append(
+                #         asyncio.create_task(
+                #             find_spotify(session, spotify_token, artist,type="artist")
+                #         )
+                #     )
+                print("tasks",tasks)
+                
+                for future in asyncio.as_completed(tasks):
+                    try:
+                        result = await future
+                        print("resultsssssssssssssssssssssssssssssssssssss de tareas", result)
+                        jsonable= jsonable_encoder(result)
+                        yield f"data: {json.dumps(jsonable)}\n\n"                        
+                        # simplified = await simplify_spotify_result(result)
+                        # simplified_data = transform_spotify_response(result)
+                        # print(simplified_data)
+                        # dict_object= simplified_data.model_dump()
+                        # jsonable= jsonable_encoder(dict_object)
+                        # yield f"data: {json.dumps(jsonable)}\n\n"
+                    except Exception as e:
+                        
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            finally:
+                await session.close()  # Cerrar sesión cuando termine el generador
+                
+            yield "event: end\ndata: stream-completed\n\n"
+
+        return StreamingResponse(generate_results(), media_type="text/event-stream")       
+    except Exception as e:
+        print(e)
+            # return to_model
 
 @app.get("/debug-env")
 async def debug_env():

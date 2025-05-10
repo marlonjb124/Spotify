@@ -71,6 +71,17 @@ async def play_song(track_name: str,artist:str,):
     
     return {"status": "¡Reproduciendo!", "track_uri": track_uri}
 
+@spotify.get("/track_history")
+async def track_history(token:str,type:str):
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        devices_url = f"https://api.spotify.com/v1/me/top/{type}"
+        response = await client.get(devices_url, headers=headers)
+        # print(response.json())
+        # print(response.headers)
+        return response.json()
+    
+
 
 async def find_spotify_user(token:str):
     headers = {"Authorization": f"Bearer {token}"}
